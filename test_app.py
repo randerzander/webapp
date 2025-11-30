@@ -168,3 +168,48 @@ def test_password_hashing(client):
     user = app_module.users.get(username)
     assert user['password'] != password
     assert user['password'] == app_module.hash_password(password)
+
+def test_process_url_logged_in(client):
+    """Test processing a URL after logging in"""
+    # Register and login
+    client.post("/register", data={
+        "username": "urltest",
+        "password": "testpass123"
+    }, follow_redirects=True)
+    
+    # Submit a test URL with markdown format
+    response = client.post("/process-url", data={
+        "url": "https://example.com",
+        "format": "markdown"
+    }, follow_redirects=False)
+    
+    assert response.status_code == 200
+    assert "Processed Article" in response.text or "Article Content" in response.text
+
+def test_process_url_html_format(client):
+    """Test processing a URL with HTML format"""
+    # Register and login
+    client.post("/register", data={
+        "username": "htmltest",
+        "password": "testpass123"
+    }, follow_redirects=True)
+    
+    # Submit a test URL with html format
+    response = client.post("/process-url", data={
+        "url": "https://example.com",
+        "format": "html"
+    }, follow_redirects=False)
+    
+    assert response.status_code == 200
+    assert "Processed Article" in response.text or "Article Content" in response.text
+
+def test_process_url_not_logged_in(client):
+    """Test that processing URL requires login"""
+    response = client.post("/process-url", data={
+        "url": "https://example.com",
+        "format": "markdown"
+    }, follow_redirects=False)
+    
+    # Should redirect to login
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"

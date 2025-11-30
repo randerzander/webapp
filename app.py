@@ -3,6 +3,10 @@ from sqlite3 import IntegrityError
 import apsw
 import hashlib
 import os
+from readability import Readability
+import requests
+from bs4 import BeautifulSoup
+import html2text
 
 # Database setup
 db = database('users.db')
@@ -22,6 +26,14 @@ def get(sess):
     if username:
         return Titled("Home", 
             P(f"hello, {username}"),
+            Form(method="post", action="/process-url")(
+                Input(name="url", placeholder="Enter URL to process", required=True, type="url"),
+                Div(
+                    Label(Input(type="radio", name="format", value="markdown", checked=True), "Markdown"),
+                    Label(Input(type="radio", name="format", value="html"), "Rendered HTML")
+                ),
+                Button("Process URL")
+            ),
             A("Logout", href="/logout"))
     return Titled("Home",
         P("hello, world"),
@@ -81,6 +93,43 @@ def post(username: str, password: str, sess):
             Button("Login")
         ),
         A("Back to home", href="/"))
+
+@rt("/process-url")
+def post(url: str, format: str, sess):
+    username = sess.get('username')
+    if not username:
+        return RedirectResponse("/login", status_code=303)
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        doc = BeautifulSoup(response.text, 'lxml')
+        
+        r = Readability(doc, url=url)
+        article = r.parse()
+        
+        h = html2text.HTML2Text()
+        markdown_content = h.handle(article['content'])
+        
+        if format == "html":
+            # Render markdown as HTML
+            import markdown
+            html_content = markdown.markdown(markdown_content)
+            return Titled("Processed Article",
+                H2(article.get('title', 'Article Content')),
+                NotStr(html_content),
+                A("Back to home", href="/"))
+        else:
+            # Display as markdown
+            return Titled("Processed Article",
+                Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
+                H2(article.get('title', 'Article Content')),
+                Pre(markdown_content),
+                A("Back to home", href="/"))
+    except Exception as e:
+        return Titled("Error",
+            P(f"Error processing URL: {str(e)}", style="color: red"),
+            A("Back to home", href="/"))
 
 @rt("/logout")
 def get(sess):
