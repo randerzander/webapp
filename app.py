@@ -66,10 +66,13 @@ def get():
 
 @rt("/login")
 def post(username: str, password: str, sess):
-    user = users.get(username)
-    if user and user.password == hash_password(password):
-        sess['username'] = username
-        return RedirectResponse("/", status_code=303)
+    try:
+        user = users.get(username)
+        if user and user['password'] == hash_password(password):
+            sess['username'] = username
+            return RedirectResponse("/", status_code=303)
+    except:
+        pass
     return Titled("Login",
         P("Invalid username or password", style="color: red"),
         Form(method="post", action="/login")(
