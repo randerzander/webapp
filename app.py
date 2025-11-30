@@ -1,6 +1,7 @@
 from fasthtml.common import *
 from sqlite3 import IntegrityError
 import hashlib
+import os
 
 # Database setup
 db = database('users.db')
@@ -82,4 +83,4 @@ def get(sess):
     sess.clear()
     return RedirectResponse("/", status_code=303)
 
-serve()
+serve(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
