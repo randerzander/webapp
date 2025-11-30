@@ -5,9 +5,6 @@ import os
 import tempfile
 import shutil
 
-# Import the app
-from app import app, hash_password
-
 @pytest.fixture
 def client():
     """Create a test client with a temporary database"""
@@ -15,21 +12,35 @@ def client():
     test_dir = tempfile.mkdtemp()
     test_db = os.path.join(test_dir, 'test_users.db')
     
-    # Monkey patch the database path
+    # Import fresh app module
     import app as app_module
-    original_db = app_module.db
-    app_module.db = database(test_db)
-    app_module.users = app_module.db.t.users
-    if app_module.users not in app_module.db.t:
-        app_module.users.create(dict(username=str, password=str), pk='username')
+    from importlib import reload
     
-    client = TestClient(app)
+    # Store original db
+    original_db_path = 'users.db'
+    
+    # Create new test database
+    test_db_obj = database(test_db)
+    test_users = test_db_obj.t.users
+    if test_users not in test_db_obj.t:
+        test_users.create(dict(username=str, password=str), pk='username')
+    
+    # Patch the app module
+    app_module.db = test_db_obj
+    app_module.users = test_users
+    
+    client = TestClient(app_module.app)
     yield client
     
-    # Restore and cleanup
-    app_module.db = original_db
-    app_module.users = original_db.t.users
-    shutil.rmtree(test_dir, ignore_errors=True)
+    # Cleanup
+    try:
+        shutil.rmtree(test_dir, ignore_errors=True)
+    except:
+        pass
+    
+    # Restore original database for app module
+    app_module.db = database(original_db_path)
+    app_module.users = app_module.db.t.users
 
 def test_homepage_not_logged_in(client):
     """Test homepage shows 'hello, world' when not logged in"""
@@ -142,6 +153,8 @@ def test_logout(client):
 
 def test_password_hashing(client):
     """Test that passwords are hashed, not stored in plain text"""
+    import app as app_module
+    
     username = "hashtest"
     password = "mypassword123"
     
@@ -152,7 +165,6 @@ def test_password_hashing(client):
     })
     
     # Check database directly
-    from app import users
-    user = users.get(username)
+    user = app_module.users.get(username)
     assert user['password'] != password
-    assert user['password'] == hash_password(password)
+    assert user['password'] == app_module.hash_password(password)
