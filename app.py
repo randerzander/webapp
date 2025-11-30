@@ -1,5 +1,6 @@
 from fasthtml.common import *
 from sqlite3 import IntegrityError
+import apsw
 import hashlib
 import os
 
@@ -43,7 +44,7 @@ def post(username: str, password: str, sess):
         users.insert(dict(username=username, password=hash_password(password)))
         sess['username'] = username
         return RedirectResponse("/", status_code=303)
-    except IntegrityError:
+    except (IntegrityError, apsw.ConstraintError):
         return Titled("Register",
             P("Username already exists", style="color: red"),
             Form(method="post", action="/register")(
