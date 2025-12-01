@@ -7,6 +7,7 @@ from readability import Readability
 import requests
 from bs4 import BeautifulSoup
 import html2text
+from openai import OpenAI
 
 # Database setup
 db = database('users.db')
@@ -117,6 +118,23 @@ def post(url: str, format: str, sess):
         char_count = len(markdown_content)
         token_count = int(char_count / 4.5)
         
+        # Generate summary using OpenRouter
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ.get("OPENROUTER_API_KEY", "")
+        )
+        
+        try:
+            completion = client.chat.completions.create(
+                model="nvidia/nemotron-nano-12b-v2-vl:free",
+                messages=[
+                    {"role": "user", "content": f"Summarize this article in 2-3 sentences:\n\n{markdown_content[:4000]}"}
+                ]
+            )
+            summary = completion.choices[0].message.content
+        except Exception as e:
+            summary = f"Summary unavailable: {str(e)}"
+        
         if format == "html":
             # Render markdown as HTML
             import markdown
@@ -124,6 +142,10 @@ def post(url: str, format: str, sess):
             return Titled("Processed Article",
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
+                Div(
+                    H3("Summary"),
+                    P(summary, style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;")
+                ),
                 NotStr(html_content),
                 A("Back to home", href="/"))
         else:
@@ -132,6 +154,10 @@ def post(url: str, format: str, sess):
                 Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
+                Div(
+                    H3("Summary"),
+                    P(summary, style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;")
+                ),
                 Pre(markdown_content),
                 A("Back to home", href="/"))
     except Exception as e:
