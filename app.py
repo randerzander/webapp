@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 import html2text
 from openai import OpenAI
 import logging
+import time
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -106,20 +107,24 @@ def post(url: str, format: str, sess):
     
     try:
         logging.info(f"Making request to URL: {url}")
+        request_start = time.time()
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers)
         response.raise_for_status()
+        request_time = time.time() - request_start
         content_length = len(response.content)
-        logging.info(f"Content retrieved: {content_length:,} bytes")
+        logging.info(f"Content retrieved: {content_length:,} bytes in {request_time:.2f}s")
         
         logging.info("Starting readability processing")
+        readability_start = time.time()
         doc = BeautifulSoup(response.text, 'lxml')
         
         r = Readability(doc, url=url)
         article = r.parse()
-        logging.info("Readability processing complete")
+        readability_time = time.time() - readability_start
+        logging.info(f"Readability processing complete in {readability_time:.2f}s")
         
         h = html2text.HTML2Text()
         markdown_content = h.handle(article['content'])
@@ -129,6 +134,7 @@ def post(url: str, format: str, sess):
         
         # Generate summary using OpenRouter
         logging.info("Starting LLM summary call")
+        llm_start = time.time()
         client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=os.environ.get("OPENROUTER_API_KEY", "")
@@ -144,8 +150,10 @@ def post(url: str, format: str, sess):
                 ]
             )
             summary = completion.choices[0].message.content
-            logging.info("LLM summary call complete")
+            llm_time = time.time() - llm_start
+            logging.info(f"LLM summary call complete in {llm_time:.2f}s")
         except Exception as e:
+            llm_time = time.time() - llm_start
             logging.error(f"LLM summary failed: {str(e)}")
             summary = f"Summary unavailable: {str(e)}"
         
@@ -156,6 +164,7 @@ def post(url: str, format: str, sess):
             return Titled("Processed Article",
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
+                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s | LLM {llm_time:.2f}s", style="color: #666; font-size: 0.9em;"),
                 Div(
                     H3("Summary"),
                     P(summary, style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;")
@@ -168,6 +177,7 @@ def post(url: str, format: str, sess):
                 Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
+                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s | LLM {llm_time:.2f}s", style="color: #666; font-size: 0.9em;"),
                 Div(
                     H3("Summary"),
                     P(summary, style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;")
