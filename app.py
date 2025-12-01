@@ -150,7 +150,14 @@ def post(url: str, format: str, sess):
         # Store content for async summary generation
         summary_cache[request_id] = {
             'status': 'pending',
-            'markdown': markdown_content[:4000]
+            'markdown': markdown_content[:4000],
+            'char_count': char_count,
+            'token_count': token_count,
+            'link_char_count': link_char_count,
+            'link_token_count': link_token_count,
+            'link_percentage': link_percentage,
+            'request_time': request_time,
+            'readability_time': readability_time
         }
         
         # Start async summary generation
@@ -178,7 +185,9 @@ def post(url: str, format: str, sess):
                 summary_cache[request_id] = {
                     'status': 'complete',
                     'summary': summary,
-                    'llm_time': llm_time
+                    'llm_time': llm_time,
+                    'request_time': summary_cache[request_id]['request_time'],
+                    'readability_time': summary_cache[request_id]['readability_time']
                 }
             except Exception as e:
                 logging.error(f"LLM summary failed: {str(e)}")
@@ -196,11 +205,17 @@ def post(url: str, format: str, sess):
             return Titled("Processed Article",
                 Script(src="https://unpkg.com/htmx.org@1.9.10"),
                 H2(article.get('title', 'Article Content')),
-                P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
-                P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="color: #666; font-size: 0.9em;"),
-                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s", style="color: #666; font-size: 0.9em;"),
-                Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
-                    P("⏳ Generating summary...", style="color: #666; font-style: italic;")
+                Details(
+                    Summary("📊 Statistics"),
+                    P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
+                    P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
+                    P(id=f"timing-{request_id}", style="margin: 0.5em 0; color: #666; font-size: 0.9em;")(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s")
+                ),
+                Details(
+                    Summary("📝 Summary"),
+                    Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
+                        P("⏳ Generating summary...", style="color: #666; font-style: italic;")
+                    )
                 ),
                 NotStr(html_content),
                 A("Back to home", href="/"))
@@ -210,11 +225,17 @@ def post(url: str, format: str, sess):
                 Script(src="https://unpkg.com/htmx.org@1.9.10"),
                 Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
                 H2(article.get('title', 'Article Content')),
-                P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
-                P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="color: #666; font-size: 0.9em;"),
-                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s", style="color: #666; font-size: 0.9em;"),
-                Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
-                    P("⏳ Generating summary...", style="color: #666; font-style: italic;")
+                Details(
+                    Summary("📊 Statistics"),
+                    P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
+                    P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
+                    P(id=f"timing-{request_id}", style="margin: 0.5em 0; color: #666; font-size: 0.9em;")(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s")
+                ),
+                Details(
+                    Summary("📝 Summary"),
+                    Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
+                        P("⏳ Generating summary...", style="color: #666; font-style: italic;")
+                    )
                 ),
                 Pre(markdown_content),
                 A("Back to home", href="/"))
@@ -240,17 +261,24 @@ def get(request_id: str):
         # Render markdown summary to HTML
         import markdown
         summary_html = markdown.markdown(result['summary'])
+        
+        # Update timing info
+        timing_script = Script(f"""
+            const timingEl = document.getElementById('timing-{request_id}');
+            if (timingEl) {{
+                timingEl.textContent = 'Timing: Request {result['request_time']:.2f}s | Readability {result['readability_time']:.2f}s | LLM {result['llm_time']:.2f}s';
+            }}
+        """)
+        
         summary_div = Div(id="summary-container")(
-            H3("Summary"),
-            Div(NotStr(summary_html), style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;"),
-            P(f"LLM timing: {result['llm_time']:.2f}s", style="color: #666; font-size: 0.9em;")
+            Div(NotStr(summary_html), style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2; margin-top: 0.5em;"),
+            timing_script
         )
         del summary_cache[request_id]
         return summary_div
     elif result['status'] == 'error':
         error_div = Div(id="summary-container")(
-            H3("Summary"),
-            P(f"Summary unavailable: {result['error']}", style="color: #dc3545;")
+            P(f"Summary unavailable: {result['error']}", style="color: #dc3545; margin-top: 0.5em;")
         )
         del summary_cache[request_id]
         return error_div
