@@ -205,13 +205,13 @@ def post(url: str, format: str, sess):
             return Titled("Processed Article",
                 Script(src="https://unpkg.com/htmx.org@1.9.10"),
                 H2(article.get('title', 'Article Content')),
-                Details(
+                Details(open=True)(
                     Summary("📊 Statistics"),
                     P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
                     P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
                     P(id=f"timing-{request_id}", style="margin: 0.5em 0; color: #666; font-size: 0.9em;")(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s")
                 ),
-                Details(
+                Details(open=True)(
                     Summary("📝 Summary"),
                     Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
                         P("⏳ Generating summary...", style="color: #666; font-style: italic;")
@@ -225,13 +225,13 @@ def post(url: str, format: str, sess):
                 Script(src="https://unpkg.com/htmx.org@1.9.10"),
                 Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
                 H2(article.get('title', 'Article Content')),
-                Details(
+                Details(open=True)(
                     Summary("📊 Statistics"),
                     P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
                     P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="margin: 0.5em 0; color: #666; font-size: 0.9em;"),
                     P(id=f"timing-{request_id}", style="margin: 0.5em 0; color: #666; font-size: 0.9em;")(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s")
                 ),
-                Details(
+                Details(open=True)(
                     Summary("📝 Summary"),
                     Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
                         P("⏳ Generating summary...", style="color: #666; font-style: italic;")
