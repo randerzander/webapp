@@ -168,7 +168,7 @@ def post(url: str, format: str, sess):
                 completion = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "user", "content": f"Summarize this article in 2-3 sentences:\n\n{summary_cache[request_id]['markdown']}"}
+                        {"role": "user", "content": f"Summarize this article in bullet points:\n\n{summary_cache[request_id]['markdown']}"}
                     ]
                 )
                 summary = completion.choices[0].message.content
@@ -237,9 +237,12 @@ def get(request_id: str):
     result = summary_cache[request_id]
     
     if result['status'] == 'complete':
+        # Render markdown summary to HTML
+        import markdown
+        summary_html = markdown.markdown(result['summary'])
         summary_div = Div(id="summary-container")(
             H3("Summary"),
-            P(result['summary'], style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;"),
+            Div(NotStr(summary_html), style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;"),
             P(f"LLM timing: {result['llm_time']:.2f}s", style="color: #666; font-size: 0.9em;")
         )
         del summary_cache[request_id]
