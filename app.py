@@ -10,6 +10,8 @@ import html2text
 from openai import OpenAI
 import logging
 import time
+import asyncio
+from threading import Thread
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -132,55 +134,76 @@ def post(url: str, format: str, sess):
         char_count = len(markdown_content)
         token_count = int(char_count / 4.5)
         
-        # Generate summary using OpenRouter
-        logging.info("Starting LLM summary call")
-        llm_start = time.time()
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.environ.get("OPENROUTER_API_KEY", "")
-        )
+        # Generate unique ID for this request
+        import uuid
+        request_id = str(uuid.uuid4())
         
-        model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.1-fast:free")
+        # Store content for async summary generation
+        summary_cache[request_id] = {
+            'status': 'pending',
+            'markdown': markdown_content[:4000]
+        }
         
-        try:
-            completion = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "user", "content": f"Summarize this article in 2-3 sentences:\n\n{markdown_content[:4000]}"}
-                ]
-            )
-            summary = completion.choices[0].message.content
-            llm_time = time.time() - llm_start
-            logging.info(f"LLM summary call complete in {llm_time:.2f}s")
-        except Exception as e:
-            llm_time = time.time() - llm_start
-            logging.error(f"LLM summary failed: {str(e)}")
-            summary = f"Summary unavailable: {str(e)}"
+        # Start async summary generation
+        def generate_summary():
+            try:
+                logging.info("Starting LLM summary call")
+                llm_start = time.time()
+                client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=os.environ.get("OPENROUTER_API_KEY", "")
+                )
+                
+                model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.1-fast:free")
+                
+                completion = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "user", "content": f"Summarize this article in 2-3 sentences:\n\n{summary_cache[request_id]['markdown']}"}
+                    ]
+                )
+                summary = completion.choices[0].message.content
+                llm_time = time.time() - llm_start
+                logging.info(f"LLM summary call complete in {llm_time:.2f}s")
+                
+                summary_cache[request_id] = {
+                    'status': 'complete',
+                    'summary': summary,
+                    'llm_time': llm_time
+                }
+            except Exception as e:
+                logging.error(f"LLM summary failed: {str(e)}")
+                summary_cache[request_id] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        
+        Thread(target=generate_summary, daemon=True).start()
         
         if format == "html":
             # Render markdown as HTML
             import markdown
             html_content = markdown.markdown(markdown_content)
             return Titled("Processed Article",
+                Script(src="https://unpkg.com/htmx.org@1.9.10"),
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
-                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s | LLM {llm_time:.2f}s", style="color: #666; font-size: 0.9em;"),
-                Div(
-                    H3("Summary"),
-                    P(summary, style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;")
+                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s", style="color: #666; font-size: 0.9em;"),
+                Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
+                    P("⏳ Generating summary...", style="color: #666; font-style: italic;")
                 ),
                 NotStr(html_content),
                 A("Back to home", href="/"))
         else:
             # Display as markdown
             return Titled("Processed Article",
+                Script(src="https://unpkg.com/htmx.org@1.9.10"),
                 Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
-                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s | LLM {llm_time:.2f}s", style="color: #666; font-size: 0.9em;"),
-                Div(
-                    H3("Summary"),
-                    P(summary, style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;")
+                P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s", style="color: #666; font-size: 0.9em;"),
+                Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
+                    P("⏳ Generating summary...", style="color: #666; font-style: italic;")
                 ),
                 Pre(markdown_content),
                 A("Back to home", href="/"))
@@ -188,6 +211,40 @@ def post(url: str, format: str, sess):
         return Titled("Error",
             P(f"Error processing URL: {str(e)}", style="color: red"),
             A("Back to home", href="/"))
+
+# Store summary requests
+summary_cache = {}
+
+@rt("/get-summary/{request_id}")
+def get(request_id: str):
+    # Check if summary is ready
+    if request_id not in summary_cache:
+        return Div(id="summary-container")(
+            P("Summary expired", style="color: #666; font-style: italic;")
+        )
+    
+    result = summary_cache[request_id]
+    
+    if result['status'] == 'complete':
+        summary_div = Div(id="summary-container")(
+            H3("Summary"),
+            P(result['summary'], style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;"),
+            P(f"LLM timing: {result['llm_time']:.2f}s", style="color: #666; font-size: 0.9em;")
+        )
+        del summary_cache[request_id]
+        return summary_div
+    elif result['status'] == 'error':
+        error_div = Div(id="summary-container")(
+            H3("Summary"),
+            P(f"Summary unavailable: {result['error']}", style="color: #dc3545;")
+        )
+        del summary_cache[request_id]
+        return error_div
+    else:
+        # Still processing, poll again
+        return Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load delay:1s", hx_swap="outerHTML")(
+            P("⏳ Generating summary...", style="color: #666; font-style: italic;")
+        )
 
 @rt("/logout")
 def get(sess):
