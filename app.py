@@ -8,6 +8,9 @@ import requests
 from bs4 import BeautifulSoup
 import html2text
 from openai import OpenAI
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Database setup
 db = database('users.db')
@@ -102,15 +105,21 @@ def post(url: str, format: str, sess):
         return RedirectResponse("/login", status_code=303)
     
     try:
+        logging.info(f"Making request to URL: {url}")
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers)
         response.raise_for_status()
+        content_length = len(response.content)
+        logging.info(f"Content retrieved: {content_length:,} bytes")
+        
+        logging.info("Starting readability processing")
         doc = BeautifulSoup(response.text, 'lxml')
         
         r = Readability(doc, url=url)
         article = r.parse()
+        logging.info("Readability processing complete")
         
         h = html2text.HTML2Text()
         markdown_content = h.handle(article['content'])
@@ -119,6 +128,7 @@ def post(url: str, format: str, sess):
         token_count = int(char_count / 4.5)
         
         # Generate summary using OpenRouter
+        logging.info("Starting LLM summary call")
         client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=os.environ.get("OPENROUTER_API_KEY", "")
@@ -132,7 +142,9 @@ def post(url: str, format: str, sess):
                 ]
             )
             summary = completion.choices[0].message.content
+            logging.info("LLM summary call complete")
         except Exception as e:
+            logging.error(f"LLM summary failed: {str(e)}")
             summary = f"Summary unavailable: {str(e)}"
         
         if format == "html":
