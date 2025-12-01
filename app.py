@@ -134,6 +134,15 @@ def post(url: str, format: str, sess):
         char_count = len(markdown_content)
         token_count = int(char_count / 4.5)
         
+        # Calculate link statistics from markdown
+        import re
+        # Match markdown links [text](url) and extract the text
+        link_pattern = r'\[([^\]]+)\]\([^\)]+\)'
+        links = re.findall(link_pattern, markdown_content)
+        link_char_count = sum(len(link_text) for link_text in links)
+        link_token_count = int(link_char_count / 4.5)
+        link_percentage = (link_char_count / char_count * 100) if char_count > 0 else 0
+        
         # Generate unique ID for this request
         import uuid
         request_id = str(uuid.uuid4())
@@ -188,6 +197,7 @@ def post(url: str, format: str, sess):
                 Script(src="https://unpkg.com/htmx.org@1.9.10"),
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
+                P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="color: #666; font-size: 0.9em;"),
                 P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s", style="color: #666; font-size: 0.9em;"),
                 Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
                     P("⏳ Generating summary...", style="color: #666; font-style: italic;")
@@ -201,6 +211,7 @@ def post(url: str, format: str, sess):
                 Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
                 H2(article.get('title', 'Article Content')),
                 P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
+                P(f"Links: {link_char_count:,} characters, ~{link_token_count:,} tokens ({link_percentage:.1f}% of total)", style="color: #666; font-size: 0.9em;"),
                 P(f"Timing: Request {request_time:.2f}s | Readability {readability_time:.2f}s", style="color: #666; font-size: 0.9em;"),
                 Div(id="summary-container", hx_get=f"/get-summary/{request_id}", hx_trigger="load", hx_swap="outerHTML")(
                     P("⏳ Generating summary...", style="color: #666; font-style: italic;")
