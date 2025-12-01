@@ -114,12 +114,16 @@ def post(url: str, format: str, sess):
         h = html2text.HTML2Text()
         markdown_content = h.handle(article['content'])
         
+        char_count = len(markdown_content)
+        token_count = int(char_count / 4.5)
+        
         if format == "html":
             # Render markdown as HTML
             import markdown
             html_content = markdown.markdown(markdown_content)
             return Titled("Processed Article",
                 H2(article.get('title', 'Article Content')),
+                P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
                 NotStr(html_content),
                 A("Back to home", href="/"))
         else:
@@ -127,6 +131,7 @@ def post(url: str, format: str, sess):
             return Titled("Processed Article",
                 Style("pre { white-space: pre-wrap; background: #f5f5f5; padding: 1em; border-radius: 5px; }"),
                 H2(article.get('title', 'Article Content')),
+                P(f"Length: {char_count:,} characters, ~{token_count:,} tokens", style="color: #666; font-size: 0.9em;"),
                 Pre(markdown_content),
                 A("Back to home", href="/"))
     except Exception as e:
