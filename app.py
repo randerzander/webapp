@@ -3,9 +3,8 @@ from sqlite3 import IntegrityError
 import apsw
 import hashlib
 import os
-from readability import Readability
+from pyreadability import Readability
 import requests
-from bs4 import BeautifulSoup
 import html2text
 from openai import OpenAI
 import logging
@@ -121,9 +120,8 @@ def post(url: str, format: str, sess):
         
         logging.info("Starting readability processing")
         readability_start = time.time()
-        doc = BeautifulSoup(response.text, 'lxml')
         
-        r = Readability(doc, url=url)
+        r = Readability(response.text, url=url)
         article = r.parse()
         readability_time = time.time() - readability_start
         logging.info(f"Readability processing complete in {readability_time:.2f}s")
