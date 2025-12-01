@@ -134,9 +134,11 @@ def post(url: str, format: str, sess):
             api_key=os.environ.get("OPENROUTER_API_KEY", "")
         )
         
+        model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.1-fast:free")
+        
         try:
             completion = client.chat.completions.create(
-                model="nvidia/nemotron-nano-12b-v2-vl:free",
+                model=model,
                 messages=[
                     {"role": "user", "content": f"Summarize this article in 2-3 sentences:\n\n{markdown_content[:4000]}"}
                 ]
