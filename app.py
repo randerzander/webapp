@@ -34,6 +34,7 @@ def get(sess):
             P(f"hello, {username}"),
             Form(method="post", action="/process-url")(
                 Input(name="url", placeholder="Enter URL to process", required=True, type="url"),
+                Textarea(name="custom_prompt", placeholder="Optional: Additional prompt for post-processing (e.g., 'Extract all dates and events')", rows=3, style="width: 100%; margin-top: 0.5em;"),
                 Div(
                     Label(Input(type="radio", name="format", value="markdown", checked=True), "Markdown"),
                     Label(Input(type="radio", name="format", value="html"), "Rendered HTML")
@@ -101,7 +102,7 @@ def post(username: str, password: str, sess):
         A("Back to home", href="/"))
 
 @rt("/process-url")
-def post(url: str, format: str, sess):
+def post(url: str, format: str, custom_prompt: str, sess):
     username = sess.get('username')
     if not username:
         return RedirectResponse("/login", status_code=303)
@@ -155,7 +156,8 @@ def post(url: str, format: str, sess):
             'link_token_count': link_token_count,
             'link_percentage': link_percentage,
             'request_time': request_time,
-            'readability_time': readability_time
+            'readability_time': readability_time,
+            'custom_prompt': custom_prompt.strip() if custom_prompt else None
         }
         
         # Start async summary generation
@@ -170,20 +172,39 @@ def post(url: str, format: str, sess):
                 
                 model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.1-fast:free")
                 
+                # Generate summary
                 completion = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "user", "content": f"Summarize this article in bullet points:\n\n{summary_cache[request_id]['markdown']}"}
+                        {"role": "user", "content": f"Summarize this article in 2-3 sentences using markdown formatting:\n\n{summary_cache[request_id]['markdown']}"}
                     ]
                 )
                 summary = completion.choices[0].message.content
                 llm_time = time.time() - llm_start
                 logging.info(f"LLM summary call complete in {llm_time:.2f}s")
                 
+                # Generate custom prompt response if provided
+                custom_response = None
+                custom_llm_time = 0
+                if summary_cache[request_id]['custom_prompt']:
+                    logging.info("Starting custom prompt LLM call")
+                    custom_start = time.time()
+                    custom_completion = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "user", "content": f"{summary_cache[request_id]['custom_prompt']}\n\nArticle content:\n\n{summary_cache[request_id]['markdown']}"}
+                        ]
+                    )
+                    custom_response = custom_completion.choices[0].message.content
+                    custom_llm_time = time.time() - custom_start
+                    logging.info(f"Custom prompt LLM call complete in {custom_llm_time:.2f}s")
+                
                 summary_cache[request_id] = {
                     'status': 'complete',
                     'summary': summary,
                     'llm_time': llm_time,
+                    'custom_response': custom_response,
+                    'custom_llm_time': custom_llm_time,
                     'request_time': summary_cache[request_id]['request_time'],
                     'readability_time': summary_cache[request_id]['readability_time']
                 }
@@ -261,15 +282,35 @@ def get(request_id: str):
         summary_html = markdown.markdown(result['summary'])
         
         # Update timing info
+        total_llm_time = result['llm_time'] + result.get('custom_llm_time', 0)
         timing_script = Script(f"""
             const timingEl = document.getElementById('timing-{request_id}');
             if (timingEl) {{
-                timingEl.textContent = 'Timing: Request {result['request_time']:.2f}s | Readability {result['readability_time']:.2f}s | LLM {result['llm_time']:.2f}s';
+                timingEl.textContent = 'Timing: Request {result['request_time']:.2f}s | Readability {result['readability_time']:.2f}s | LLM {total_llm_time:.2f}s';
             }}
         """)
         
+        # Build summary div with custom response if present
+        summary_content = []
+        
+        if result.get('custom_response'):
+            custom_html = markdown.markdown(result['custom_response'])
+            summary_content.append(
+                Div(
+                    H4("Custom Analysis", style="margin-top: 0;"),
+                    Div(NotStr(custom_html), style="background: #fff3cd; padding: 1em; border-radius: 5px; border-left: 4px solid #ffc107; margin-bottom: 1em;")
+                )
+            )
+        
+        summary_content.append(
+            Div(
+                H4("Summary", style="margin-top: 0;" if result.get('custom_response') else "margin-top: 0;"),
+                Div(NotStr(summary_html), style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2;")
+            )
+        )
+        
         summary_div = Div(id="summary-container")(
-            Div(NotStr(summary_html), style="background: #f0f8ff; padding: 1em; border-radius: 5px; border-left: 4px solid #4a90e2; margin-top: 0.5em;"),
+            *summary_content,
             timing_script
         )
         del summary_cache[request_id]
